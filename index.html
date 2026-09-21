@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>ContactKiosk</title>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <style>
+    :root{
+      --purple:#7c4dff;--purple-dark:#5f35d6;--ink:#312642;
+      --muted:#746b82;--white:#fff;--danger:#d64545;
+      --shadow:0 14px 34px rgba(69,48,112,.16)
+    }
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);
+      background:radial-gradient(circle at 20% 10%,rgba(255,255,255,.82),transparent 28%),radial-gradient(circle at 85% 20%,rgba(255,255,255,.55),transparent 24%),linear-gradient(145deg,#eadffc 0%,#f7ebff 48%,#eee7ff 100%)}
+    button{font:inherit}[hidden]{display:none!important}#app{position:relative;width:100%;height:100%}
+    .screen{display:none;position:absolute;inset:0;width:100%;height:100%}.screen.active{display:flex}
+    .screen-inner{width:100%;height:100%;padding:max(26px,env(safe-area-inset-top)) max(26px,env(safe-area-inset-right)) max(26px,env(safe-area-inset-bottom)) max(26px,env(safe-area-inset-left))}
+    .welcome-inner{display:flex;flex-direction:column;align-items:center;justify-content:space-between;text-align:center;padding-top:9vh;padding-bottom:9vh}
+    .welcome-small{font-family:Georgia,"Times New Roman",serif;font-style:italic;font-size:clamp(38px,6vw,72px);color:var(--purple-dark)}
+    .welcome-title{margin-top:14px;font-family:Georgia,"Times New Roman",serif;font-style:italic;font-weight:600;font-size:clamp(52px,8vw,96px);line-height:.98;color:var(--purple)}
+    .scan-start-button{width:min(720px,86vw);min-height:170px;border:5px solid rgba(255,255,255,.84);border-radius:42px;background:linear-gradient(160deg,#936bff 0%,#7545ef 100%);color:#fff;box-shadow:0 0 0 5px rgba(124,77,255,.16),var(--shadow);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer}
+    .scan-start-button:active{transform:scale(.985)}.scan-start-top{font-size:clamp(28px,4vw,48px);font-weight:900}.scan-start-bottom{font-size:clamp(40px,6vw,70px);font-weight:950;line-height:1}
+    .scan-inner{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;text-align:center}
+    .scan-instruction{max-width:900px;font-family:Georgia,"Times New Roman",serif;font-size:clamp(44px,7vw,86px);font-weight:700;line-height:.98;color:#342647}
+    .camera-shell{position:relative;width:132px;height:132px;border-radius:28px;overflow:hidden;background:#cfd5dc;border:5px solid rgba(255,255,255,.86);box-shadow:0 0 0 3px rgba(124,77,255,.15),0 10px 24px rgba(67,47,104,.16);z-index:5}
+    #qr-video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);background:#cfd5dc}.camera-overlay{position:absolute;inset:0;pointer-events:none}
+    .camera-corner{position:absolute;width:26px;height:26px;border-color:#fff;border-style:solid}.top-left{top:10px;left:10px;border-width:4px 0 0 4px}.top-right{top:10px;right:10px;border-width:4px 4px 0 0}.bottom-left{bottom:10px;left:10px;border-width:0 0 4px 4px}.bottom-right{bottom:10px;right:10px;border-width:0 4px 4px 0}
+    .scan-status{min-height:26px;font-size:18px;font-weight:700;color:var(--muted)}
+    .bulk-activate-zone{position:absolute;top:0;right:0;width:160px;height:160px;border:0;background:transparent;opacity:0;z-index:50}
+    .bulk-lock-btn{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:100px;height:100px;border:0;border-radius:50%;background:rgba(255,255,255,.92);box-shadow:0 8px 28px rgba(61,40,104,.24);font-size:50px;z-index:45}
+    .reason-inner{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:28px}.reason-heading{font-family:Georgia,"Times New Roman",serif;font-size:clamp(38px,5vw,64px);font-weight:700;text-align:center}
+    .reason-grid{width:min(980px,92vw);display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:24px;justify-items:center}
+    .reason-button{width:clamp(150px,19vw,205px);aspect-ratio:1;border-radius:50%;border:5px solid rgba(255,255,255,.8);background:radial-gradient(circle at 35% 25%,#966dff 0%,#7c4dff 52%,#6839e6 100%);color:#fff;font-size:clamp(18px,2.2vw,28px);font-weight:850;padding:20px}
+    .success-inner{display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}.success-check{width:160px;height:160px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--purple);color:#fff;font-size:92px;font-weight:900}.success-title{margin-top:24px;font-size:clamp(52px,8vw,90px);font-weight:900;color:var(--purple-dark)}.success-message{margin-top:6px;font-size:28px;color:var(--muted)}
+    .secondary-button{border:none;border-radius:999px;padding:14px 26px;background:rgba(255,255,255,.82);color:var(--muted);font-size:18px;font-weight:750}
+    .pin-modal{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(36,27,51,.56);backdrop-filter:blur(6px)}
+    .pin-card{width:min(360px,calc(100vw - 42px));padding:28px;border-radius:28px;background:rgba(255,255,255,.98);display:flex;flex-direction:column;align-items:center;gap:16px}
+    .pin-title{font-size:26px;font-weight:800;color:var(--purple-dark)}.pin-display{width:100%;height:56px;display:flex;align-items:center;justify-content:center;border-radius:14px;background:#f2ecfb;font-size:30px;letter-spacing:.22em}.pin-pad{width:100%;display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.pin-btn{height:58px;border:0;border-radius:15px;background:#eee8fa;font-size:23px;font-weight:800}.pin-submit{background:var(--purple);color:#fff}.pin-clear{background:#f7dfdf;color:#9c3030}.pin-status{min-height:22px;color:var(--danger);font-weight:700}
+    @media(max-width:900px){.reason-grid{grid-template-columns:repeat(2,1fr)}}
+  </style>
+</head>
+<body>
+<div id="app">
+  <section id="screen-welcome" class="screen active">
+    <div class="screen-inner welcome-inner">
+      <div><div class="welcome-small">Welcome to</div><div class="welcome-title">J.Nagy's Office</div></div>
+      <button id="start-scan-btn" class="scan-start-button"><span class="scan-start-top">PRESS HERE TO</span><span class="scan-start-bottom">SCAN</span></button>
+    </div>
+  </section>
+
+  <section id="screen-scan" class="screen">
+    <button id="bulk-activate-zone" class="bulk-activate-zone" aria-label="Bulk mode"></button>
+    <button id="bulk-lock-btn" class="bulk-lock-btn" hidden aria-label="Turn off bulk mode">🔒</button>
+    <div class="screen-inner scan-inner">
+      <div class="scan-instruction">PLEASE SCAN<br>THE QR CODE ON<br>YOUR BADGE</div>
+      <div class="camera-shell">
+        <video id="qr-video" autoplay muted playsinline></video>
+        <div class="camera-overlay">
+          <div class="camera-corner top-left"></div><div class="camera-corner top-right"></div><div class="camera-corner bottom-left"></div><div class="camera-corner bottom-right"></div>
+        </div>
+      </div>
+      <div id="scan-status" class="scan-status">Ready.</div>
+      <button id="cancel-scan-btn" class="secondary-button">Cancel</button>
+    </div>
+  </section>
+
+  <section id="screen-reason" class="screen">
+    <div class="screen-inner reason-inner">
+      <div class="reason-heading">What brings you in today?</div>
+      <div id="reason-grid" class="reason-grid"></div>
+      <button id="reason-back-btn" class="secondary-button">Start Over</button>
+    </div>
+  </section>
+
+  <section id="screen-success" class="screen">
+    <div class="screen-inner success-inner">
+      <div class="success-check">✓</div><div class="success-title">Recorded</div><div class="success-message" id="success-message">Thank you.</div>
+    </div>
+  </section>
+
+  <div id="pin-modal" class="pin-modal" hidden>
+    <div class="pin-card">
+      <div class="pin-title">Enter Bulk Mode PIN</div>
+      <div id="pin-display" class="pin-display">&nbsp;</div>
+      <div class="pin-pad">
+        <button class="pin-btn" data-pin="1">1</button><button class="pin-btn" data-pin="2">2</button><button class="pin-btn" data-pin="3">3</button>
+        <button class="pin-btn" data-pin="4">4</button><button class="pin-btn" data-pin="5">5</button><button class="pin-btn" data-pin="6">6</button>
+        <button class="pin-btn" data-pin="7">7</button><button class="pin-btn" data-pin="8">8</button><button class="pin-btn" data-pin="9">9</button>
+        <button id="pin-clear-btn" class="pin-btn pin-clear">C</button><button class="pin-btn" data-pin="0">0</button><button id="pin-submit-btn" class="pin-btn pin-submit">OK</button>
+      </div>
+      <div id="pin-status" class="pin-status"></div>
+      <button id="pin-cancel-btn" class="secondary-button">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const NORMAL_REASONS=['Testing','Discipline','Contract','Follow Up','Awards','Academics','Fieldtrips','Activities'];
+  const PERSONAL_PIN='1111';
+  const MASTER_PIN='0374';
+  const BULK_REASON='Investigation';
+
+  let currentQrValue='',videoStream=null,scanFrameHandle=null,scanLocked=false,scanCanvas=null,scanContext=null,audioContext=null,isBulkMode=false,bulkTapTimes=[],enteredPin='';
+
+  document.addEventListener('DOMContentLoaded',()=>{
+    scanCanvas=document.createElement('canvas');
+    scanContext=scanCanvas.getContext('2d',{willReadFrequently:true});
+    renderReasonButtons_();
+    bindUi_();
+  });
+
+  function bindUi_(){
+    document.getElementById('start-scan-btn').addEventListener('click',beginScan_);
+    document.getElementById('cancel-scan-btn').addEventListener('click',resetKiosk_);
+    document.getElementById('reason-back-btn').addEventListener('click',resetKiosk_);
+    document.getElementById('bulk-activate-zone').addEventListener('click',handleBulkTap_);
+    document.getElementById('bulk-lock-btn').addEventListener('click',disableBulkMode_);
+    document.querySelectorAll('[data-pin]').forEach(b=>b.addEventListener('click',()=>{if(enteredPin.length<8){enteredPin+=b.dataset.pin;updatePinDisplay_();}}));
+    document.getElementById('pin-clear-btn').addEventListener('click',()=>{enteredPin='';updatePinDisplay_();document.getElementById('pin-status').textContent='';});
+    document.getElementById('pin-submit-btn').addEventListener('click',submitPin_);
+    document.getElementById('pin-cancel-btn').addEventListener('click',closePin_);
+  }
+
+  function renderReasonButtons_(){
+    const grid=document.getElementById('reason-grid'); grid.innerHTML='';
+    NORMAL_REASONS.forEach(reason=>{
+      const b=document.createElement('button'); b.className='reason-button'; b.textContent=reason;
+      b.addEventListener('click',()=>demoRecord_(reason)); grid.appendChild(b);
+    });
+  }
+
+  function showScreen_(id){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+    document.getElementById(id).classList.add('active'); refreshBulkLock_();
+  }
+
+  async function beginScan_(){
+    stopCamera_(); currentQrValue=''; scanLocked=false; showScreen_('screen-scan');
+    const status=document.getElementById('scan-status'); status.textContent='Opening camera...'; unlockAudio_();
+    try{
+      if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia) throw new Error('Camera API unavailable');
+      videoStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});
+      const video=document.getElementById('qr-video'); video.srcObject=videoStream; await video.play();
+      status.textContent=isBulkMode?'Bulk mode active. Scan a badge.':'Hold the QR code in front of the camera.';
+      startScanner_();
+    }catch(error){ status.textContent='Camera error: '+(error.message||error.name); }
+  }
+
+  function startScanner_(){
+    const video=document.getElementById('qr-video');
+    const scan=()=>{
+      if(scanLocked||!videoStream)return;
+      if(video.readyState>=HTMLMediaElement.HAVE_CURRENT_DATA){
+        const w=video.videoWidth,h=video.videoHeight;
+        if(w&&h){
+          scanCanvas.width=w;scanCanvas.height=h;scanContext.drawImage(video,0,0,w,h);
+          const imageData=scanContext.getImageData(0,0,w,h);
+          const result=jsQR(imageData.data,w,h,{inversionAttempts:'attemptBoth'});
+          if(result&&result.data){handleQr_(result.data);return;}
+        }
+      }
+      scanFrameHandle=requestAnimationFrame(scan);
+    };
+    scanFrameHandle=requestAnimationFrame(scan);
+  }
+
+  function handleQr_(value){
+    if(scanLocked)return; scanLocked=true; currentQrValue=String(value).trim(); playBeep_(); stopCamera_();
+    if(isBulkMode) demoRecord_(BULK_REASON); else showScreen_('screen-reason');
+  }
+
+  function stopCamera_(){
+    if(scanFrameHandle){cancelAnimationFrame(scanFrameHandle);scanFrameHandle=null;}
+    if(videoStream){videoStream.getTracks().forEach(t=>t.stop());videoStream=null;}
+    const video=document.getElementById('qr-video'); if(video) video.srcObject=null;
+  }
+
+  function handleBulkTap_(){
+    if(isBulkMode)return; const now=Date.now(); bulkTapTimes.push(now); bulkTapTimes=bulkTapTimes.filter(t=>now-t<=1500);
+    if(bulkTapTimes.length>=3){bulkTapTimes=[];openPin_();}
+  }
+
+  function openPin_(){enteredPin='';updatePinDisplay_();document.getElementById('pin-status').textContent='';document.getElementById('pin-modal').hidden=false;}
+  function closePin_(){enteredPin='';document.getElementById('pin-modal').hidden=true;updatePinDisplay_();}
+  function updatePinDisplay_(){document.getElementById('pin-display').textContent=enteredPin?'•'.repeat(enteredPin.length):' ';}
+
+  function submitPin_(){
+    if(enteredPin===MASTER_PIN||enteredPin===PERSONAL_PIN){
+      isBulkMode=true; closePin_(); refreshBulkLock_(); document.getElementById('scan-status').textContent='Bulk mode active.'; return;
+    }
+    document.getElementById('pin-status').textContent='Incorrect PIN.'; enteredPin=''; updatePinDisplay_();
+  }
+
+  function disableBulkMode_(){isBulkMode=false;refreshBulkLock_();document.getElementById('scan-status').textContent='Bulk mode off.';}
+  function refreshBulkLock_(){
+    const lock=document.getElementById('bulk-lock-btn'); const scanVisible=document.getElementById('screen-scan').classList.contains('active');
+    lock.hidden=!(isBulkMode&&scanVisible);
+  }
+
+  function demoRecord_(reason){
+    console.log('DEMO RECORD',{qr:currentQrValue,reason,bulk:isBulkMode});
+    document.getElementById('success-message').textContent=isBulkMode?reason:'Thank you.';
+    showScreen_('screen-success');
+    setTimeout(()=>{currentQrValue='';scanLocked=false;if(isBulkMode)beginScan_();else resetKiosk_();},isBulkMode?1200:2000);
+  }
+
+  function resetKiosk_(){stopCamera_();currentQrValue='';scanLocked=false;showScreen_('screen-welcome');}
+
+  function unlockAudio_(){
+    if(!audioContext){const C=window.AudioContext||window.webkitAudioContext;if(C)audioContext=new C();}
+    if(audioContext&&audioContext.state==='suspended')audioContext.resume();
+  }
+
+  function playBeep_(){
+    try{
+      unlockAudio_();if(!audioContext)return;
+      const o=audioContext.createOscillator(),g=audioContext.createGain();o.frequency.value=880;
+      g.gain.setValueAtTime(.0001,audioContext.currentTime);g.gain.exponentialRampToValueAtTime(.22,audioContext.currentTime+.01);g.gain.exponentialRampToValueAtTime(.0001,audioContext.currentTime+.16);
+      o.connect(g);g.connect(audioContext.destination);o.start();o.stop(audioContext.currentTime+.17);
+    }catch(e){console.log(e);}
+  }
+</script>
+</body>
+</html>
