@@ -60,7 +60,7 @@
 <div id="app">
   <section id="screen-welcome" class="screen active">
     <div class="screen-inner welcome-inner">
-      <div><div class="welcome-small">Welcome to</div><div class="welcome-title">J.Nagy's Office</div></div>
+      <div><div class="welcome-small">Welcome to</div><div id="office-title" class="welcome-title">ContactKiosk</div></div>
       <button id="start-scan-btn" class="scan-start-button"><span class="scan-start-top">PRESS HERE TO</span><span class="scan-start-bottom">SCAN</span></button>
     </div>
   </section>
@@ -122,19 +122,78 @@
 </div>
 
 <script>
-  const NORMAL_REASONS=['Testing','Discipline','Contract','Follow Up','Awards','Academics','Fieldtrips','Activities'];
-  const PERSONAL_PIN='1111';
-  const MASTER_PIN='0374';
-  const BULK_REASON='Investigation';
+  const BACKEND_URL='https://script.google.com/macros/s/AKfycbx3WgPjX-cji7GvVhIiNok95dU228SYLJF_n_un2ralHQXrfcslwCDvulWvty-P1zBjwg/exec';
 
-  let currentQrValue='',videoStream=null,scanFrameHandle=null,scanLocked=false,scanCanvas=null,scanContext=null,audioContext=null,isBulkMode=false,bulkTapTimes=[],enteredPin='',bulkSleepTimer=null;
+  let staffSession='';
+  let staffDisplayName='';
+  let normalReasons=[];
+  let bulkReason='';
+  let bulkToken='';
+  let currentQrValue='';
+  let videoStream=null;
+  let scanFrameHandle=null;
+  let scanLocked=false;
+  let scanCanvas=null;
+  let scanContext=null;
+  let audioContext=null;
+  let isBulkMode=false;
+  let bulkTapTimes=[];
+  let enteredPin='';
+  let bulkSleepTimer=null;
 
-  document.addEventListener('DOMContentLoaded',()=>{
+  document.addEventListener('DOMContentLoaded',async()=>{
     scanCanvas=document.createElement('canvas');
     scanContext=scanCanvas.getContext('2d',{willReadFrequently:true});
-    renderReasonButtons_();
     bindUi_();
+
+    try{
+      await initializeSession_();
+      await loadConfig_();
+      renderReasonButtons_();
+    }catch(err){
+      console.error(err);
+      document.getElementById('office-title').textContent='ContactKiosk';
+      document.getElementById('start-scan-btn').disabled=true;
+      alert(err.message || 'Unable to start ContactKiosk.');
+    }
   });
+
+  async function initializeSession_(){
+    const params=new URLSearchParams(location.search);
+    const incoming=params.get('session');
+
+    if(incoming){
+      staffSession=incoming;
+      sessionStorage.setItem('contactKioskSession',staffSession);
+      history.replaceState({},document.title,location.pathname);
+      return;
+    }
+
+    staffSession=sessionStorage.getItem('contactKioskSession')||'';
+
+    if(!staffSession){
+      location.replace(BACKEND_URL+'?action=auth');
+      await new Promise(()=>{});
+    }
+  }
+
+  async function loadConfig_(){
+    let response=await jsonp_('config',{session:staffSession});
+
+    if(!response.ok && /session/i.test(response.error||'')){
+      sessionStorage.removeItem('contactKioskSession');
+      location.replace(BACKEND_URL+'?action=auth');
+      await new Promise(()=>{});
+    }
+
+    if(!response.ok) throw new Error(response.error||'Unable to load kiosk configuration.');
+
+    staffDisplayName=(response.staff&&response.staff.displayName)||'ContactKiosk';
+    normalReasons=Array.isArray(response.buttons)?response.buttons.filter(Boolean).slice(0,8):[];
+    bulkReason=String(response.bulkReason||'').trim();
+
+    document.getElementById('office-title').textContent=staffDisplayName+"'s Office";
+  }
 
   function bindUi_(){
     document.getElementById('start-scan-btn').addEventListener('click',beginScan_);
@@ -142,126 +201,334 @@
     document.getElementById('reason-back-btn').addEventListener('click',resetKiosk_);
     document.getElementById('bulk-activate-zone').addEventListener('click',handleBulkTap_);
     document.getElementById('bulk-lock-btn').addEventListener('click',disableBulkMode_);
-    document.querySelectorAll('[data-pin]').forEach(b=>b.addEventListener('click',()=>{if(enteredPin.length<8){enteredPin+=b.dataset.pin;updatePinDisplay_();}}));
-    document.getElementById('pin-clear-btn').addEventListener('click',()=>{enteredPin='';updatePinDisplay_();document.getElementById('pin-status').textContent='';});
+    document.querySelectorAll('[data-pin]').forEach(b=>b.addEventListener('click',()=>{
+      if(enteredPin.length<8){enteredPin+=b.dataset.pin;updatePinDisplay_();}
+    }));
+    document.getElementById('pin-clear-btn').addEventListener('click',()=>{
+      enteredPin='';
+      updatePinDisplay_();
+      document.getElementById('pin-status').textContent='';
+    });
     document.getElementById('pin-submit-btn').addEventListener('click',submitPin_);
     document.getElementById('pin-cancel-btn').addEventListener('click',closePin_);
   }
 
   function renderReasonButtons_(){
     const grid=document.getElementById('reason-grid');
-    const reasons=NORMAL_REASONS.map(v=>String(v||'').trim()).filter(Boolean).slice(0,8);
+    const reasons=normalReasons.map(v=>String(v||'').trim()).filter(Boolean).slice(0,8);
     grid.innerHTML='';
     grid.className='reason-grid layout-'+Math.max(1,reasons.length);
+
     reasons.forEach(reason=>{
       const b=document.createElement('button');
       b.className='reason-button';
       b.textContent=reason;
-      b.addEventListener('click',()=>demoRecord_(reason));
+      b.addEventListener('click',()=>recordVisit_(reason,false));
       grid.appendChild(b);
     });
   }
 
   function showScreen_(id){
     document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
-    document.getElementById(id).classList.add('active'); refreshBulkLock_();
+    document.getElementById(id).classList.add('active');
+    refreshBulkLock_();
   }
 
   async function beginScan_(){
-    stopCamera_(); clearBulkSleepTimer_(); currentQrValue=''; scanLocked=false; showScreen_('screen-scan');
-    const status=document.getElementById('scan-status'); status.textContent=isBulkMode?('Recording all entries as: '+BULK_REASON):'Opening camera...'; unlockAudio_();
+    stopCamera_();
+    clearBulkSleepTimer_();
+    currentQrValue='';
+    scanLocked=false;
+    showScreen_('screen-scan');
+
+    const status=document.getElementById('scan-status');
+    status.textContent=isBulkMode?('Recording all entries as: '+bulkReason):'Opening camera...';
+    unlockAudio_();
+
     try{
       if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia) throw new Error('Camera API unavailable');
-      videoStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});
-      const video=document.getElementById('qr-video'); video.srcObject=videoStream; await video.play();
-      status.textContent=isBulkMode?('Recording all entries as: '+BULK_REASON):'Hold the QR code in front of the camera.';
+
+      videoStream=await navigator.mediaDevices.getUserMedia({
+        video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},
+        audio:false
+      });
+
+      const video=document.getElementById('qr-video');
+      video.srcObject=videoStream;
+      await video.play();
+
+      status.textContent=isBulkMode
+        ?('Recording all entries as: '+bulkReason)
+        :'Hold the QR code in front of the camera.';
+
       startScanner_();
       if(isBulkMode) resetBulkSleepTimer_();
-    }catch(error){ status.textContent='Camera error: '+(error.message||error.name); }
+    }catch(error){
+      status.textContent='Camera error: '+(error.message||error.name);
+    }
   }
 
   function startScanner_(){
     const video=document.getElementById('qr-video');
+
     const scan=()=>{
       if(scanLocked||!videoStream)return;
+
       if(video.readyState>=HTMLMediaElement.HAVE_CURRENT_DATA){
         const w=video.videoWidth,h=video.videoHeight;
+
         if(w&&h){
-          scanCanvas.width=w;scanCanvas.height=h;scanContext.drawImage(video,0,0,w,h);
+          scanCanvas.width=w;
+          scanCanvas.height=h;
+          scanContext.drawImage(video,0,0,w,h);
+
           const imageData=scanContext.getImageData(0,0,w,h);
           const result=jsQR(imageData.data,w,h,{inversionAttempts:'attemptBoth'});
-          if(result&&result.data){handleQr_(result.data);return;}
+
+          if(result&&result.data){
+            handleQr_(result.data);
+            return;
+          }
         }
       }
+
       scanFrameHandle=requestAnimationFrame(scan);
     };
+
     scanFrameHandle=requestAnimationFrame(scan);
   }
 
   function handleQr_(value){
-    if(scanLocked)return; scanLocked=true; clearBulkSleepTimer_(); currentQrValue=String(value).trim(); playBeep_(); stopCamera_();
-    if(isBulkMode) demoRecord_(BULK_REASON); else showScreen_('screen-reason');
+    if(scanLocked)return;
+
+    scanLocked=true;
+    clearBulkSleepTimer_();
+    currentQrValue=String(value).trim();
+    playBeep_();
+    stopCamera_();
+
+    if(isBulkMode) recordVisit_(bulkReason,true);
+    else showScreen_('screen-reason');
   }
 
   function stopCamera_(){
-    if(scanFrameHandle){cancelAnimationFrame(scanFrameHandle);scanFrameHandle=null;}
-    if(videoStream){videoStream.getTracks().forEach(t=>t.stop());videoStream=null;}
-    const video=document.getElementById('qr-video'); if(video) video.srcObject=null;
+    if(scanFrameHandle){
+      cancelAnimationFrame(scanFrameHandle);
+      scanFrameHandle=null;
+    }
+
+    if(videoStream){
+      videoStream.getTracks().forEach(t=>t.stop());
+      videoStream=null;
+    }
+
+    const video=document.getElementById('qr-video');
+    if(video) video.srcObject=null;
   }
 
   function handleBulkTap_(){
-    if(isBulkMode)return; const now=Date.now(); bulkTapTimes.push(now); bulkTapTimes=bulkTapTimes.filter(t=>now-t<=1500);
-    if(bulkTapTimes.length>=3){bulkTapTimes=[];openPin_();}
-  }
+    if(isBulkMode||!bulkReason)return;
 
-  function openPin_(){enteredPin='';updatePinDisplay_();document.getElementById('pin-status').textContent='';document.getElementById('pin-modal').hidden=false;}
-  function closePin_(){enteredPin='';document.getElementById('pin-modal').hidden=true;updatePinDisplay_();}
-  function updatePinDisplay_(){document.getElementById('pin-display').textContent=enteredPin?'•'.repeat(enteredPin.length):' ';}
+    const now=Date.now();
+    bulkTapTimes.push(now);
+    bulkTapTimes=bulkTapTimes.filter(t=>now-t<=1500);
 
-  function submitPin_(){
-    if(enteredPin===MASTER_PIN||enteredPin===PERSONAL_PIN){
-      isBulkMode=true; closePin_(); refreshBulkLock_(); document.getElementById('scan-status').textContent='Recording all entries as: '+BULK_REASON; resetBulkSleepTimer_(); return;
+    if(bulkTapTimes.length>=3){
+      bulkTapTimes=[];
+      openPin_();
     }
-    document.getElementById('pin-status').textContent='Incorrect PIN.'; enteredPin=''; updatePinDisplay_();
   }
 
-  function disableBulkMode_(){isBulkMode=false;clearBulkSleepTimer_();refreshBulkLock_();document.getElementById('scan-status').textContent='Bulk mode off.';}
+  function openPin_(){
+    enteredPin='';
+    updatePinDisplay_();
+    document.getElementById('pin-status').textContent='';
+    document.getElementById('pin-modal').hidden=false;
+  }
+
+  function closePin_(){
+    enteredPin='';
+    document.getElementById('pin-modal').hidden=true;
+    updatePinDisplay_();
+  }
+
+  function updatePinDisplay_(){
+    document.getElementById('pin-display').textContent=enteredPin?'•'.repeat(enteredPin.length):' ';
+  }
+
+  async function submitPin_(){
+    const status=document.getElementById('pin-status');
+
+    if(!enteredPin){
+      status.textContent='Enter your PIN.';
+      return;
+    }
+
+    status.textContent='Checking…';
+
+    try{
+      const response=await jsonp_('verifyBulk',{
+        session:staffSession,
+        pin:enteredPin
+      });
+
+      if(!response.ok){
+        status.textContent=response.error||'Incorrect PIN.';
+        enteredPin='';
+        updatePinDisplay_();
+        return;
+      }
+
+      bulkToken=response.bulkToken||'';
+      bulkReason=response.bulkReason||bulkReason;
+      isBulkMode=true;
+      closePin_();
+      refreshBulkLock_();
+      document.getElementById('scan-status').textContent='Recording all entries as: '+bulkReason;
+      resetBulkSleepTimer_();
+    }catch(err){
+      status.textContent=err.message||'Unable to verify PIN.';
+    }
+  }
+
+  function disableBulkMode_(){
+    isBulkMode=false;
+    bulkToken='';
+    clearBulkSleepTimer_();
+    refreshBulkLock_();
+    document.getElementById('scan-status').textContent='Bulk mode off.';
+  }
+
   function refreshBulkLock_(){
-    const lock=document.getElementById('bulk-lock-btn'); const scanVisible=document.getElementById('screen-scan').classList.contains('active');
+    const lock=document.getElementById('bulk-lock-btn');
+    const scanVisible=document.getElementById('screen-scan').classList.contains('active');
     lock.hidden=!(isBulkMode&&scanVisible);
   }
 
   function resetBulkSleepTimer_(){
     clearBulkSleepTimer_();
+
     if(!isBulkMode)return;
-    bulkSleepTimer=setTimeout(()=>{stopCamera_();showScreen_('screen-welcome');},12000);
+
+    bulkSleepTimer=setTimeout(()=>{
+      stopCamera_();
+      showScreen_('screen-welcome');
+    },12000);
   }
 
   function clearBulkSleepTimer_(){
-    if(bulkSleepTimer){clearTimeout(bulkSleepTimer);bulkSleepTimer=null;}
+    if(bulkSleepTimer){
+      clearTimeout(bulkSleepTimer);
+      bulkSleepTimer=null;
+    }
   }
 
-  function demoRecord_(reason){
-    console.log('DEMO RECORD',{qr:currentQrValue,reason,bulk:isBulkMode});
-    document.getElementById('success-message').textContent=isBulkMode?reason:'Thank you.';
-    showScreen_('screen-success');
-    setTimeout(()=>{currentQrValue='';scanLocked=false;if(isBulkMode)beginScan_();else resetKiosk_();},isBulkMode?1200:2000);
+  async function recordVisit_(reason,bulk){
+    if(!currentQrValue)return;
+
+    try{
+      const response=await jsonp_('record',{
+        session:staffSession,
+        qr:currentQrValue,
+        service:reason,
+        bulk:bulk?'1':'0',
+        bulkToken:bulk?bulkToken:''
+      });
+
+      if(!response.ok) throw new Error(response.error||'Unable to record visit.');
+
+      document.getElementById('success-message').textContent=bulk?response.service:'Thank you.';
+      showScreen_('screen-success');
+
+      setTimeout(()=>{
+        currentQrValue='';
+        scanLocked=false;
+
+        if(isBulkMode) beginScan_();
+        else resetKiosk_();
+      },bulk?1200:2000);
+    }catch(err){
+      alert(err.message||'Unable to record visit.');
+      scanLocked=false;
+
+      if(bulk&&/bulk authorization/i.test(err.message||'')){
+        disableBulkMode_();
+      }
+
+      showScreen_('screen-scan');
+    }
   }
 
-  function resetKiosk_(){stopCamera_();clearBulkSleepTimer_();currentQrValue='';scanLocked=false;showScreen_('screen-welcome');}
+  function resetKiosk_(){
+    stopCamera_();
+    clearBulkSleepTimer_();
+    currentQrValue='';
+    scanLocked=false;
+    showScreen_('screen-welcome');
+  }
 
   function unlockAudio_(){
-    if(!audioContext){const C=window.AudioContext||window.webkitAudioContext;if(C)audioContext=new C();}
-    if(audioContext&&audioContext.state==='suspended')audioContext.resume();
+    if(!audioContext){
+      const C=window.AudioContext||window.webkitAudioContext;
+      if(C)audioContext=new C();
+    }
+
+    if(audioContext&&audioContext.state==='suspended') audioContext.resume();
   }
 
   function playBeep_(){
     try{
-      unlockAudio_();if(!audioContext)return;
-      const o=audioContext.createOscillator(),g=audioContext.createGain();o.frequency.value=880;
-      g.gain.setValueAtTime(.0001,audioContext.currentTime);g.gain.exponentialRampToValueAtTime(.22,audioContext.currentTime+.01);g.gain.exponentialRampToValueAtTime(.0001,audioContext.currentTime+.16);
-      o.connect(g);g.connect(audioContext.destination);o.start();o.stop(audioContext.currentTime+.17);
-    }catch(e){console.log(e);}
+      unlockAudio_();
+      if(!audioContext)return;
+
+      const o=audioContext.createOscillator();
+      const g=audioContext.createGain();
+
+      o.frequency.value=880;
+      g.gain.setValueAtTime(.0001,audioContext.currentTime);
+      g.gain.exponentialRampToValueAtTime(.22,audioContext.currentTime+.01);
+      g.gain.exponentialRampToValueAtTime(.0001,audioContext.currentTime+.16);
+
+      o.connect(g);
+      g.connect(audioContext.destination);
+      o.start();
+      o.stop(audioContext.currentTime+.17);
+    }catch(e){
+      console.log(e);
+    }
+  }
+
+  function jsonp_(action,params={}){
+    return new Promise((resolve,reject)=>{
+      const callback='ckcb_'+Date.now()+'_'+Math.random().toString(36).slice(2);
+      const script=document.createElement('script');
+      const query=new URLSearchParams({action,callback,...params});
+
+      const cleanup=()=>{
+        try{delete window[callback];}catch(_){}
+        if(script.parentNode)script.parentNode.removeChild(script);
+      };
+
+      const timer=setTimeout(()=>{
+        cleanup();
+        reject(new Error('ContactKiosk server did not respond.'));
+      },15000);
+
+      window[callback]=(data)=>{
+        clearTimeout(timer);
+        cleanup();
+        resolve(data||{ok:false,error:'Empty server response.'});
+      };
+
+      script.onerror=()=>{
+        clearTimeout(timer);
+        cleanup();
+        reject(new Error('Unable to reach ContactKiosk server.'));
+      };
+
+      script.src=BACKEND_URL+'?'+query.toString();
+      document.head.appendChild(script);
+    });
   }
 </script>
 </body>
