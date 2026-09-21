@@ -29,16 +29,31 @@
     .camera-corner{position:absolute;width:26px;height:26px;border-color:#fff;border-style:solid}.top-left{top:10px;left:10px;border-width:4px 0 0 4px}.top-right{top:10px;right:10px;border-width:4px 4px 0 0}.bottom-left{bottom:10px;left:10px;border-width:0 0 4px 4px}.bottom-right{bottom:10px;right:10px;border-width:0 4px 4px 0}
     .scan-status{min-height:26px;font-size:18px;font-weight:700;color:var(--muted)}
     .bulk-activate-zone{position:absolute;top:0;right:0;width:160px;height:160px;border:0;background:transparent;opacity:0;z-index:50}
-    .bulk-lock-btn{position:absolute;top:22px;right:22px;width:84px;height:84px;border:0;border-radius:50%;background:rgba(255,255,255,.92);box-shadow:0 8px 28px rgba(61,40,104,.24);font-size:42px;z-index:55}
+    .bulk-lock-btn{position:absolute;top:22px;right:22px;width:84px;height:84px;padding:0;border:0;border-radius:50%;background:transparent;box-shadow:0 8px 28px rgba(61,40,104,.24);z-index:55;display:flex;align-items:center;justify-content:center}
+    .bulk-lock-icon{width:84px;height:84px;display:block}
+    .bulk-lock-btn:active{transform:scale(.95)}
     .reason-inner{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:28px}.reason-heading{font-family:Georgia,"Times New Roman",serif;font-size:clamp(38px,5vw,64px);font-weight:700;text-align:center}
-    .reason-grid{width:min(980px,92vw);display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:24px;justify-items:center}
+    .reason-grid{width:min(980px,92vw);display:grid;gap:24px;justify-content:center;justify-items:center;align-items:center}
+    .reason-grid.layout-1{grid-template-columns:repeat(1,minmax(150px,205px))}
+    .reason-grid.layout-2{grid-template-columns:repeat(2,minmax(150px,205px))}
+    .reason-grid.layout-3,.reason-grid.layout-4{grid-template-columns:repeat(2,minmax(150px,205px))}
+    .reason-grid.layout-5,.reason-grid.layout-6{grid-template-columns:repeat(6,minmax(65px,1fr))}
+    .reason-grid.layout-7,.reason-grid.layout-8{grid-template-columns:repeat(8,minmax(55px,1fr))}
+    .reason-grid.layout-5 .reason-button,.reason-grid.layout-6 .reason-button{grid-column:span 2}
+    .reason-grid.layout-7 .reason-button,.reason-grid.layout-8 .reason-button{grid-column:span 2}
+    .reason-grid.layout-3 .reason-button:nth-child(3){grid-column:1 / span 2}
+    .reason-grid.layout-5 .reason-button:nth-child(4){grid-column:2 / span 2}
+    .reason-grid.layout-7 .reason-button:nth-child(5){grid-column:2 / span 2}
     .reason-button{width:clamp(150px,19vw,205px);aspect-ratio:1;border-radius:50%;border:5px solid rgba(255,255,255,.8);background:radial-gradient(circle at 35% 25%,#966dff 0%,#7c4dff 52%,#6839e6 100%);color:#fff;font-size:clamp(18px,2.2vw,28px);font-weight:850;padding:20px}
     .success-inner{display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}.success-check{width:160px;height:160px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--purple);color:#fff;font-size:92px;font-weight:900}.success-title{margin-top:24px;font-size:clamp(52px,8vw,90px);font-weight:900;color:var(--purple-dark)}.success-message{margin-top:6px;font-size:28px;color:var(--muted)}
     .secondary-button{border:none;border-radius:999px;padding:14px 26px;background:rgba(255,255,255,.82);color:var(--muted);font-size:18px;font-weight:750}
     .pin-modal{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(36,27,51,.56);backdrop-filter:blur(6px)}
     .pin-card{width:min(360px,calc(100vw - 42px));padding:28px;border-radius:28px;background:rgba(255,255,255,.98);display:flex;flex-direction:column;align-items:center;gap:16px}
     .pin-title{font-size:26px;font-weight:800;color:var(--purple-dark)}.pin-display{width:100%;height:56px;display:flex;align-items:center;justify-content:center;border-radius:14px;background:#f2ecfb;font-size:30px;letter-spacing:.22em}.pin-pad{width:100%;display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.pin-btn{height:58px;border:0;border-radius:15px;background:#eee8fa;font-size:23px;font-weight:800}.pin-submit{background:var(--purple);color:#fff}.pin-clear{background:#f7dfdf;color:#9c3030}.pin-status{min-height:22px;color:var(--danger);font-weight:700}
-    @media(max-width:900px){.reason-grid{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:900px){
+      .reason-grid{gap:18px;width:min(760px,94vw)}
+      .reason-button{width:clamp(132px,25vw,175px)}
+    }
   </style>
 </head>
 <body>
@@ -52,7 +67,17 @@
 
   <section id="screen-scan" class="screen">
     <button id="bulk-activate-zone" class="bulk-activate-zone" aria-label="Bulk mode"></button>
-    <button id="bulk-lock-btn" class="bulk-lock-btn" hidden aria-label="Turn off bulk mode">🔒</button>
+    <button id="bulk-lock-btn" class="bulk-lock-btn" hidden aria-label="Turn off bulk mode">
+      <svg class="bulk-lock-icon" viewBox="0 0 100 100" aria-hidden="true">
+        <circle cx="50" cy="50" r="46" fill="rgba(255,255,255,.96)"></circle>
+        <g fill="none" stroke="#5f35d6" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M36 46V36c0-8 6-14 14-14s14 6 14 14v10"></path>
+          <rect x="30" y="44" width="40" height="30" rx="8" ry="8" fill="#fff"></rect>
+          <circle cx="50" cy="58" r="4" fill="#5f35d6" stroke="none"></circle>
+          <path d="M50 62v6"></path>
+        </g>
+      </svg>
+    </button>
     <div class="screen-inner scan-inner">
       <div class="scan-instruction">PLEASE SCAN<br>THE QR CODE ON<br>YOUR BADGE</div>
       <div class="camera-shell">
@@ -124,10 +149,16 @@
   }
 
   function renderReasonButtons_(){
-    const grid=document.getElementById('reason-grid'); grid.innerHTML='';
-    NORMAL_REASONS.forEach(reason=>{
-      const b=document.createElement('button'); b.className='reason-button'; b.textContent=reason;
-      b.addEventListener('click',()=>demoRecord_(reason)); grid.appendChild(b);
+    const grid=document.getElementById('reason-grid');
+    const reasons=NORMAL_REASONS.map(v=>String(v||'').trim()).filter(Boolean).slice(0,8);
+    grid.innerHTML='';
+    grid.className='reason-grid layout-'+Math.max(1,reasons.length);
+    reasons.forEach(reason=>{
+      const b=document.createElement('button');
+      b.className='reason-button';
+      b.textContent=reason;
+      b.addEventListener('click',()=>demoRecord_(reason));
+      grid.appendChild(b);
     });
   }
 
